@@ -5,31 +5,27 @@ declare(strict_types=1);
 namespace App\migrations;
 
 use App\classes\Migration;
-use PDO;
+use App\classes\Schema;
 
 class CreateUsersMigration extends Migration
 {
-    private PDO $pdo;
-
-    public function __construct(PDO $pdo)
-    {
-        $this->pdo = $pdo;
-    }
-
     public function up(): void
     {
-        $sql = "CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            email VARCHAR(255) NOT NULL
-        )";
+        $schema = new Schema();
 
-        $this->pdo->exec($sql);
+        $sql = $schema->createTable('users')
+            ->addColumn('id', 'INT AUTO_INCREMENT', ['PRIMARY KEY'])
+            ->addColumn('name', 'VARCHAR(255)', ['NOT NULL'])
+            ->addColumn('email', 'VARCHAR(255)', ['NOT NULL'])
+            ->buildCreateTableSQL();
+
+        $this->getPdo()->exec($sql);
     }
 
     public function down(): void
     {
-        $sql = "DROP TABLE IF EXISTS users";
-        $this->pdo->exec($sql);
+        $schema = new Schema();
+        $sql = $schema->dropTable('users');
+        $this->getPdo()->exec($sql);
     }
 }

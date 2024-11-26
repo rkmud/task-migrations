@@ -5,30 +5,28 @@ declare(strict_types=1);
 namespace App\classes;
 
 use PDO;
+use PDOException;
 
-final class MigrationManager
+class MigrationManager
 {
-    private PDO $pdo;
+    private array $migrationFiles;
 
-    public function __construct(PDO $pdo)
+    public function __construct(private PDO $pdo, array $migrationFiles)
     {
-        $this->pdo = $pdo;
+        $this->migrationFiles = $migrationFiles;
     }
-
-    public function getMigrations(): array
+    private function getMigrations(): array
     {
         $migrations = [];
-        $migrationsFolder = str_replace('\\', DIRECTORY_SEPARATOR, realpath(dirname(__DIR__)));
-        $files = glob($migrationsFolder . '/migrations/*.php');
-
-        foreach ($files as $file) {
+        foreach ($this->migrationFiles as $file) {
             $migrationClass = $this->getMigrationClassFromFile($file);
             $migrations[] = $migrationClass;
         }
+
         return $migrations;
     }
 
-    public function getPendingMigrations(): array
+    private function getPendingMigrations(): array
     {
         $executedMigrations = $this->getExecutedMigrations();
         $allMigrations = $this->getMigrations();
@@ -38,12 +36,16 @@ final class MigrationManager
 
     public function getExecutedMigrations(): array
     {
-        $stmt = $this->pdo->query("SELECT name FROM migrations");
-
-        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+        try {
+            $stmt = $this->pdo->query("SELECT name FROM migrations");
+            return $stmt->fetchAll(PDO::FETCH_COLUMN);
+        } catch (PDOException $e) {
+            error_log("Error fetching executed migrations: " . $e->getMessage());
+            return [];
+        }
     }
 
-    public function runMigration(string $migration): void
+    private function runMigration(string $migration): void
     {
         $migrationInstance = new $migration($this->pdo);
         $migrationInstance->up();
@@ -54,7 +56,7 @@ final class MigrationManager
         echo "Migration $migration executed.\n";
     }
 
-    public function rollbackMigration(string $migration): void
+    private function rollbackMigration(string $migration): void
     {
         $migrationInstance = new $migration($this->pdo);
         $migrationInstance->down();
@@ -65,7 +67,28 @@ final class MigrationManager
         echo "Migration $migration rolled back.\n";
     }
 
-    private function getMigrationClassFromFile(string $file): string
+    public function migrateUp(): void
+    {
+        $pendingMigrations = $this->getPendingMigrations();
+
+        foreach ($pendingMigrations as $migration) {
+            $this->runMigration($migration);
+        }
+    }
+
+    public function migrateDown(): void
+    {
+        $executedMigrations = $this->getExecutedMigrations();
+
+        if (count($executedMigrations) <= 0) {
+            echo "No migrations to roll back.\n";
+            return;
+        }
+        $lastMigration = array_pop($executedMigrations);
+        $this->rollbackMigration($lastMigration);
+    }
+
+    public function getMigrationClassFromFile(string $file): string
     {
         $filename = basename($file, '.php');
         $class = 'App\migrations\\' . $filename;
